@@ -15,13 +15,13 @@ It doesn't force any particular design pattern or application architecture to be
 
 And most importantly, at the time of writing, `DbContextScope` has been battle-tested in a large-scale application for over two months and has performed without a hitch. 
 
-#Using DbContextScope
+## Using DbContextScope
 
 The repo contains a demo application that demonstrates the most common (and a few more advanced) use-cases.
 
 I would highly recommend reading the following blog post first. It examines in great details the most commonly used approaches to manage DbContext instances and explains how `DbContextScope` addresses their shortcomings and simplifies DbContext management: [Managing DbContext the right way with Entity Framework 6: an in-depth guide](http://mehdi.me/ambient-dbcontext-in-ef6/). 
 
-###Overview
+### Overview
 
 This is the `DbContextScope` interface:
 
@@ -57,7 +57,8 @@ public interface IDbContextScopeFactory
 }
 ```
 
-###Typical usage
+### Typical usage
+
 With `DbContextScope`, your typical service method would look like this:
 
 ```C#
@@ -110,7 +111,8 @@ Those `DbContext` instances are created lazily and the `DbContextScope` keeps tr
 
 You'll note that the service method doesn't need to know which type of `DbContext` will be required during the course of the business transaction. It only needs to create a `DbContextScope` and any component that needs to access the database within that scope will request the type of `DbContext` they need. 
 
-###Nesting scopes
+### Nesting scopes
+
 A `DbContextScope` can of course be nested. Let's say that you already have a service method that can mark a user as a premium user like this:
 
 ```C#
@@ -153,7 +155,8 @@ public void MarkGroupOfUsersAsPremium(IEnumerable<Guid> userIds)
 
 This makes creating a service method that combines the logic of multiple other service methods trivial. 
 
-###Read-only scopes
+### Read-only scopes
+
 If a service method is read-only, having to call `SaveChanges()` on its `DbContextScope` before returning can be a pain. But not calling it isn't an option either as: 
 
 1. It will make code review and maintenance difficult (did you intend not to call `SaveChanges()` or did you forget to call it?) 
@@ -180,7 +183,8 @@ public int NumberPremiumUsers()
 }
 ```
 
-###Async support
+### Async support
+
 `DbContextScope` works with async execution flows as you would expect:
 
 ```C#
@@ -204,7 +208,7 @@ This is made possible by the fact that `DbContextScope` stores itself in the Cal
 
 **WARNING**: There is one thing that you *must* always keep in mind when using any async flow with `DbContextScope`. Just like `TransactionScope`, `DbContextScope` only supports being used within a single logical flow of execution. 
 
-I.e. if you attempt to start multiple parallel tasks within the context of a `DbContextScope` (e.g. by creating multiple threads or multiple TPL `Task`), you will get into big trouble. This is because the ambient `DbContextScope` will flow through all the threads your parallel tasks are using. If code in these threads need to use the database, they will all use the same ambient `DbContext` instance, resulting the same the `DbContext` instance being used from multiple threads simultaneously. 
+For example, if you attempt to start multiple parallel tasks within the context of a `DbContextScope` (e.g. by creating multiple threads or multiple TPL `Task`), you will get into big trouble. This is because the ambient `DbContextScope` will flow through all the threads your parallel tasks are using. If code in these threads need to use the database, they will all use the same ambient `DbContext` instance, resulting the same the `DbContext` instance being used from multiple threads simultaneously. 
 
 In general, parallelizing database access within a single business transaction has little to no benefits and only adds significant complexity. Any parallel operation performed within the context of a business transaction should not access the database.
 
@@ -236,7 +240,8 @@ public void RandomServiceMethod()
 }
 ```
 
-###Creating a non-nested DbContextScope
+### Creating a non-nested DbContextScope
+
 This is an advanced feature that I would expect most applications to never need. Tread carefully when using this as it can create tricky issues and quickly lead to a maintenance nightmare. 
 
 Sometimes, a service method may need to persist its changes to the underlying database regardless of the outcome of overall business transaction it may be part of. This would be the case if:
@@ -269,7 +274,7 @@ public void RandomServiceMethod()
 
 The major issue with doing this is that this service method will use separate `DbContext` instances than the ones used in the rest of that business transaction. Here are a few basic rules to always follow in that case in order to avoid weird bugs and maintenance nightmares:
 
-####1. Persistent entity returned by a service method must always be attached to the ambient context
+#### 1. Persistent entity returned by a service method must always be attached to the ambient context
 
 If you force the creation of a new `DbContextScope` (and therefore of new `DbContext` instances) instead of joining the ambient one, your service method must **never** return persistent entities that were created / retrieved within that new scope. This would be completely unexpected and will lead to humongous complexity.
 
@@ -280,11 +285,11 @@ Instead, either:
 - Don't return persistent entities. This is the easiest, cleanest, most foolproof method. E.g. if your service creates a new domain model object, don't return it. Return its ID instead and let the client load the entity in its own `DbContext` instance if it needs the actual object.
 - If you absolutely need to return a persistent entity, switch back to the ambient context, load the entity you want to return in the ambient context and return that.
 
-####2. Upon exit, a service method must make sure that all modifications it made to persistent entities have been replicated in the parent scope
+#### 2. Upon exit, a service method must make sure that all modifications it made to persistent entities have been replicated in the parent scope
 
 If your service method forces the creation of a new `DbContextScope` and then modifies persistent entities in that new scope, it must make sure that the parent ambient scope (if any) can "see" those modification when it returns. 
 
-I.e. if the `DbContext` instances in the parent scope had already loaded the entities you modified in their first-level cache (ObjectStateManager), your service method must force a refresh of these entities to ensure that the parent scope doesn't end up working with stale versions of these objects.
+For example, if the `DbContext` instances in the parent scope had already loaded the entities you modified in their first-level cache (ObjectStateManager), your service method must force a refresh of these entities to ensure that the parent scope doesn't end up working with stale versions of these objects.
 
 The `DbContextScope` class has a handy helper method that makes this fairly painless:
 
@@ -315,7 +320,3 @@ public void RandomServiceMethod(Guid accountId)
     }
 }
 ```
-
-
-
-
